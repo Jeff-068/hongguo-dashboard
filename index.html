@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>红果APP分销结算数据看板</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -43,6 +44,8 @@
         .btn-primary:hover { background: #5a6fd6; }
         .btn-export { background: #52c41a; color: white; }
         .btn-export:hover { background: #49b018; }
+        .btn-share { background: #1890ff; color: white; }
+        .btn-share:hover { background: #0f7ae5; }
         .btn-clear { background: #ff4d4f; color: white; }
         .btn-clear:hover { background: #e8393b; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -400,6 +403,7 @@
     <div class="page" id="page-dashboard">
         <div class="dash-controls">
             <button class="btn btn-export" onclick="exportToExcel()" id="btn-export" disabled>导出 Excel</button>
+            <button class="btn btn-share" onclick="generateShareURL()" id="btn-share" disabled>分享看板</button>
             <button class="btn btn-primary" onclick="switchPage('source')">&#8592; 返回数据源</button>
             <span class="stats-info" id="stats-info"></span>
         </div>
@@ -978,6 +982,7 @@ function generateDashboard() {
     document.getElementById('table-scroll').innerHTML = html;
     document.getElementById('empty-state')?.remove();
     document.getElementById('btn-export').disabled = false;
+    document.getElementById('btn-share').disabled = false;
     document.getElementById('stats-info').textContent =
         `共 ${rowCount} 天数据 | 总激活: ${totalUsers.toLocaleString()} | 总结算: ${formatCurrency(totalSettlementAmount)} | 总利润: ${formatCurrency(totalProfit)}`;
 }
@@ -1129,6 +1134,27 @@ function recalcSummary() {
         statsInfo.textContent = `共 ${allDates.size} 天数据 | 总激活: ${totalUsers.toLocaleString()} | 总结算: ${formatCurrency(totalSettlementAmount)} | 总利润: ${formatCurrency(totalProfit)}`;
     }
 }
+// ========== Share ==========
+function generateShareURL() {
+    const shareData = {};
+    if (state.retention) shareData.retention = state.retention;
+    if (state.lt) shareData.lt = state.lt;
+    if (state.arpu) shareData.arpu = state.arpu;
+    if (state.settlement) shareData.settlement = state.settlement;
+    if (Object.keys(state.mediaExpense).length > 0) shareData.mediaExpense = state.mediaExpense;
+
+    const json = JSON.stringify(shareData);
+    const compressed = LZString.compressToEncodedURIComponent(json);
+    const url = location.origin + location.pathname + '#data=' + compressed;
+
+    navigator.clipboard.writeText(url).then(() => {
+        alert('分享链接已复制到剪贴板！\n\n发送给他人即可查看数据看板。');
+    }).catch(() => {
+        // Fallback for browsers that don't support clipboard API
+        prompt('请复制以下链接分享给他人：', url);
+    });
+}
+
 function exportToExcel() {
     const table = document.getElementById('data-table');
     if (!table) { alert('请先生成看板'); return; }
@@ -1175,7 +1201,26 @@ function clearAll() {
 }
 
 // ========== Page Load Restore ==========
+let isShareMode = false;
+
 (function restoreOnLoad() {
+    // Priority 1: Load from URL hash (shared link)
+    if (location.hash && location.hash.startsWith('#data=')) {
+        try {
+            const compressed = location.hash.slice(6); // remove '#data='
+            const json = LZString.decompressFromEncodedURIComponent(compressed);
+            if (json) {
+                const d = JSON.parse(json);
+                if (d.retention) { state.retention = d.retention; state.retentionHeaders = d.retention.headers || []; }
+                if (d.lt) { state.lt = d.lt; state.ltHeaders = d.lt.headers || []; }
+                if (d.arpu) { state.arpu = d.arpu; state.arpuHeaders = d.arpu.headers || []; }
+                if (d.settlement) state.settlement = d.settlement;
+                if (d.mediaExpense) state.mediaExpense = d.mediaExpense;
+                isShareMode = true;
+            }
+        } catch(e) { console.error('Failed to load shared data:', e); }
+    }
+
     const hasData = state.retention || state.lt || state.arpu || state.settlement;
     if (!hasData) return;
 
@@ -1185,7 +1230,7 @@ function clearAll() {
             document.getElementById('card-' + type).classList.add('uploaded');
             const status = document.getElementById('status-' + type);
             status.className = 'status success';
-            status.textContent = '已上传 (缓存)';
+            status.textContent = isShareMode ? '已加载 (分享)' : '已上传 (缓存)';
         }
     });
     document.getElementById('btn-generate').disabled = false;
@@ -1194,6 +1239,16 @@ function clearAll() {
     // Auto-generate dashboard and jump to dashboard page
     generateDashboard();
     switchPage('dashboard');
+
+    // In share mode, make media expense inputs read-only
+    if (isShareMode) {
+        document.querySelectorAll('.media-input').forEach(input => {
+            input.readOnly = true;
+            input.style.background = '#f5f5f5';
+            input.style.cursor = 'default';
+            input.placeholder = '';
+        });
+    }
 })();
 </script>
 </body>
