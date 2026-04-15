@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>红果APP分销结算数据看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            min-height: 100vh;
+        }
+        .container { max-width: 100%; padding: 20px; }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px 32px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 { font-size: 22px; font-weight: 600; }
+        .header .subtitle { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+
+        /* Buttons */
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5a6fd6; }
+        .btn-export { background: #52c41a; color: white; }
+        .btn-export:hover { background: #49b018; }
+        .btn-clear { background: #ff4d4f; color: white; }
+        .btn-clear:hover { background: #e8393b; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Table */
+        .table-wrapper {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .table-scroll {
+            overflow-x: auto;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        table {
+            border-collapse: collapse;
+            width: max-content;
+            min-width: 100%;
+        }
+        th, td {
+            padding: 7px 12px;
+            border: 1px solid #e8e8e8;
+            text-align: center;
+            white-space: nowrap;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        /* Sticky header */
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            font-weight: 600;
+        }
+        thead tr:first-child th { top: 0; z-index: 11; }
+        thead tr:nth-child(2) th { top: 33px; z-index: 10; }
+
+        /* Sticky first column */
+        th:first-child, td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 5;
+            background: white;
+        }
+        thead th:first-child { z-index: 12; }
+
+        /* Section colors */
+        .th-base { background: #f5f5f5; color: #333; }
+        .th-retention { background: #e6f7ff; color: #0050b3; }
+        .th-lt { background: #f6ffed; color: #237804; }
+        .th-arpu { background: #fff7e6; color: #ad4e00; }
+        .th-settlement { background: #fff0f6; color: #9e1068; }
+
+        .th-retention-sub { background: #bae7ff; color: #003a8c; font-weight: 500; }
+        .th-lt-sub { background: #d9f7be; color: #135200; font-weight: 500; }
+        .th-arpu-sub { background: #ffe7ba; color: #873800; font-weight: 500; }
+        .th-settlement-sub { background: #ffd6e7; color: #780650; font-weight: 500; }
+
+        /* Data rows */
+        tbody tr:hover { background: #fafafa; }
+        tbody tr:hover td:first-child { background: #fafafa; }
+        td.date-cell { font-weight: 500; text-align: left; background: white; }
+        td.users-cell { font-weight: 500; color: #1890ff; }
+        td.retention-cell { color: #0050b3; }
+        td.lt-cell { color: #237804; }
+        td.arpu-cell { color: #ad4e00; }
+        td.settlement-cell { color: #9e1068; }
+        td.profit-positive { color: #52c41a; font-weight: 500; }
+        td.profit-negative { color: #ff4d4f; font-weight: 500; }
+
+        /* Editable input */
+        .media-input {
+            width: 80px;
+            padding: 3px 6px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 12px;
+            background: #fffbe6;
+            outline: none;
+        }
+        .media-input:focus { border-color: #667eea; box-shadow: 0 0 0 2px rgba(102,126,234,0.2); }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+        .empty-state p { font-size: 14px; }
+
+        /* Formula cells */
+        .has-formula {
+            cursor: pointer;
+            position: relative;
+        }
+        .has-formula::after {
+            content: '';
+            position: absolute;
+            bottom: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 0;
+            border-bottom: 1px dashed currentColor;
+            opacity: 0.4;
+        }
+        .has-formula:hover { background: #f5f0ff !important; }
+
+        /* Formula tooltip */
+        .formula-tooltip {
+            position: fixed;
+            z-index: 9999;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            border-radius: 8px;
+            padding: 14px 18px;
+            font-size: 13px;
+            line-height: 1.8;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+            max-width: 420px;
+            pointer-events: none;
+            opacity: 0;
+            transform: translateY(4px);
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .formula-tooltip.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .formula-tooltip .ft-title {
+            font-weight: 600;
+            color: #a78bfa;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+        .formula-tooltip .ft-formula {
+            font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+            background: rgba(255,255,255,0.08);
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin: 6px 0;
+            font-size: 12px;
+            color: #fbbf24;
+        }
+        .formula-tooltip .ft-calc {
+            font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+            color: #67e8f9;
+            font-size: 12px;
+        }
+        .formula-tooltip .ft-result {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-weight: 600;
+            color: #34d399;
+            font-size: 13px;
+        }
+
+        /* Summary row */
+        .summary-row td {
+            background: #fafafa !important;
+            font-weight: 600;
+            border-top: 2px solid #d9d9d9;
+        }
+        .summary-row td:first-child { background: #fafafa !important; }
+
+        /* Navigation */
+        .nav {
+            display: flex;
+            background: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .nav-item {
+            flex: 1;
+            padding: 14px 24px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.25s;
+            border-bottom: 3px solid transparent;
+            position: relative;
+        }
+        .nav-item:hover { background: #f8f9ff; color: #333; }
+        .nav-item.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            background: #f8f9ff;
+            font-weight: 600;
+        }
+        .nav-item .nav-icon { margin-right: 6px; }
+        .nav-item .badge {
+            display: inline-block;
+            background: #52c41a;
+            color: white;
+            font-size: 11px;
+            padding: 1px 7px;
+            border-radius: 10px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .nav-item .badge.pending { background: #d9d9d9; }
+
+        /* Page views */
+        .page { display: none; }
+        .page.active { display: block; }
+
+        /* Data source page */
+        .source-page-inner { max-width: 900px; margin: 0 auto; }
+        .source-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .upload-section {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .upload-card {
+            background: white;
+            border-radius: 10px;
+            padding: 28px 20px;
+            text-align: center;
+            border: 2px dashed #d9d9d9;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+        .upload-card:hover { border-color: #667eea; background: #f8f9ff; }
+        .upload-card.uploaded { border-style: solid; }
+        .upload-card .icon { font-size: 32px; margin-bottom: 10px; }
+        .upload-card .label { font-size: 15px; font-weight: 600; color: #333; }
+        .upload-card .hint { font-size: 12px; color: #999; margin-top: 6px; }
+        .upload-card .status { font-size: 12px; margin-top: 10px; font-weight: 500; }
+        .upload-card .status.success { color: #52c41a; }
+        .upload-card .status.waiting { color: #999; }
+        .upload-card .file-info {
+            font-size: 11px; color: #999; margin-top: 4px;
+            max-width: 200px; margin-left: auto; margin-right: auto;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .upload-card input[type="file"] {
+            position: absolute; inset: 0; opacity: 0; cursor: pointer;
+        }
+        .upload-card.retention { border-color: #91d5ff; }
+        .upload-card.retention.uploaded { border-color: #1890ff; background: #e6f7ff; }
+        .upload-card.lt { border-color: #b7eb8f; }
+        .upload-card.lt.uploaded { border-color: #52c41a; background: #f6ffed; }
+        .upload-card.arpu { border-color: #ffd591; }
+        .upload-card.arpu.uploaded { border-color: #fa8c16; background: #fff7e6; }
+        .upload-card.settlement { border-color: #ffadd2; }
+        .upload-card.settlement.uploaded { border-color: #eb2f96; background: #fff0f6; }
+        .source-actions {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .source-actions .btn { padding: 10px 36px; font-size: 14px; }
+
+        /* Dashboard page controls */
+        .dash-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            align-items: center;
+        }
+        .stats-info { margin-left: auto; font-size: 13px; color: #666; }
+
+        @media (max-width: 768px) {
+            .upload-section { grid-template-columns: 1fr; }
+            .nav-item { padding: 12px 12px; font-size: 13px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- Header -->
+    <div class="header">
+        <div>
+            <h1>红果APP分销结算数据看板</h1>
+            <div class="subtitle">数据整合 / 留存 / LT / ARPU / 结算分析</div>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav">
+        <div class="nav-item active" onclick="switchPage('source')" id="nav-source">
+            <span class="nav-icon">&#9881;</span>数据源管理
+            <span class="badge pending" id="badge-source">0/4</span>
+        </div>
+        <div class="nav-item" onclick="switchPage('dashboard')" id="nav-dashboard">
+            <span class="nav-icon">&#9783;</span>结算看板
+        </div>
+    </div>
+
+    <!-- PAGE 1: Data Source -->
+    <div class="page active" id="page-source">
+        <div class="source-page-inner">
+            <div class="source-title">上传数据文件</div>
+            <div class="upload-section">
+                <div class="upload-card retention" id="card-retention">
+                    <div class="icon">&#128202;</div>
+                    <div class="label">留存数据</div>
+                    <div class="hint">Excel 取 C~L 列</div>
+                    <div class="status waiting" id="status-retention">待上传</div>
+                    <div class="file-info" id="fileinfo-retention"></div>
+                    <input type="file" accept=".xlsx,.xls,.csv" onchange="handleFileUpload('retention', this)">
+                </div>
+                <div class="upload-card lt" id="card-lt">
+                    <div class="icon">&#128200;</div>
+                    <div class="label">LT数据</div>
+                    <div class="hint">Excel 取 D~O 列</div>
+                    <div class="status waiting" id="status-lt">待上传</div>
+                    <div class="file-info" id="fileinfo-lt"></div>
+                    <input type="file" accept=".xlsx,.xls,.csv" onchange="handleFileUpload('lt', this)">
+                </div>
+                <div class="upload-card arpu" id="card-arpu">
+                    <div class="icon">&#128176;</div>
+                    <div class="label">ARPU数据</div>
+                    <div class="hint">Excel 取 D~O 列</div>
+                    <div class="status waiting" id="status-arpu">待上传</div>
+                    <div class="file-info" id="fileinfo-arpu"></div>
+                    <input type="file" accept=".xlsx,.xls,.csv" onchange="handleFileUpload('arpu', this)">
+                </div>
+                <div class="upload-card settlement" id="card-settlement">
+                    <div class="icon">&#128203;</div>
+                    <div class="label">结算统计数据</div>
+                    <div class="hint">读取 激活用户数 / 分销CPA</div>
+                    <div class="status waiting" id="status-settlement">待上传</div>
+                    <div class="file-info" id="fileinfo-settlement"></div>
+                    <input type="file" accept=".xlsx,.xls,.csv" onchange="handleFileUpload('settlement', this)">
+                </div>
+            </div>
+            <div class="source-actions">
+                <button class="btn btn-primary" onclick="generateAndSwitch()" id="btn-generate" disabled>生成看板 &rarr;</button>
+                <button class="btn btn-clear" onclick="clearAll()" style="margin-left:12px;">清空数据</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAGE 2: Dashboard -->
+    <div class="page" id="page-dashboard">
+        <div class="dash-controls">
+            <button class="btn btn-export" onclick="exportToExcel()" id="btn-export" disabled>导出 Excel</button>
+            <button class="btn btn-primary" onclick="switchPage('source')">&#8592; 返回数据源</button>
+            <span class="stats-info" id="stats-info"></span>
+        </div>
+        <div class="table-wrapper">
+            <div class="table-scroll" id="table-scroll">
+                <div class="empty-state" id="empty-state">
+                    <div class="icon">&#128451;</div>
+                    <p>请先在「数据源管理」中上传文件并生成看板</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Formula Tooltip -->
+<div class="formula-tooltip" id="formula-tooltip"></div>
+
+<script>
+// ========== State ==========
+const state = {
+    retention: null,   // { headers: [], data: { date: { users, values[] } } }
+    lt: null,
+    arpu: null,
+    settlement: null,  // { data: { date: { conversions, cpa } } }
+    mediaExpense: {},  // { dateKey: number } - persisted in localStorage
+    retentionHeaders: [],
+    ltHeaders: [],
+    arpuHeaders: [],
+};
+
+const STORAGE_KEY = 'hongguo_media_expense';
+const DATA_STORAGE_KEY = 'hongguo_dashboard_data';
+
+// Load all saved data
+try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) state.mediaExpense = JSON.parse(saved);
+} catch(e) {}
+
+try {
+    const saved = localStorage.getItem(DATA_STORAGE_KEY);
+    if (saved) {
+        const d = JSON.parse(saved);
+        if (d.retention) { state.retention = d.retention; state.retentionHeaders = d.retention.headers || []; }
+        if (d.lt) { state.lt = d.lt; state.ltHeaders = d.lt.headers || []; }
+        if (d.arpu) { state.arpu = d.arpu; state.arpuHeaders = d.arpu.headers || []; }
+        if (d.settlement) { state.settlement = d.settlement; }
+    }
+} catch(e) {}
+
+function saveDataToStorage() {
+    const toSave = {};
+    if (state.retention) toSave.retention = state.retention;
+    if (state.lt) toSave.lt = state.lt;
+    if (state.arpu) toSave.arpu = state.arpu;
+    if (state.settlement) toSave.settlement = state.settlement;
+    localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(toSave));
+}
+
+// ========== Page Navigation ==========
+function switchPage(page) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    document.getElementById('nav-' + page).classList.add('active');
+}
+
+function generateAndSwitch() {
+    generateDashboard();
+    switchPage('dashboard');
+}
+
+function updateBadge() {
+    let count = 0;
+    ['retention', 'lt', 'arpu', 'settlement'].forEach(t => {
+        if (state[t]) count++;
+    });
+    const badge = document.getElementById('badge-source');
+    badge.textContent = count + '/4';
+    badge.className = count === 4 ? 'badge' : 'badge pending';
+}
+
+// ========== Excel Parsing ==========
+function handleFileUpload(type, input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const workbook = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+
+            if (type === 'settlement') {
+                parseSettlement(sheet);
+            } else {
+                parseMetricFile(sheet, type);
+            }
+
+            // Update UI
+            const card = document.getElementById('card-' + type);
+            const status = document.getElementById('status-' + type);
+            card.classList.add('uploaded');
+            status.className = 'status success';
+            status.textContent = '已上传';
+            document.getElementById('fileinfo-' + type).textContent = file.name;
+
+            document.getElementById('btn-generate').disabled = false;
+            updateBadge();
+            saveDataToStorage();
+        } catch(err) {
+            alert('解析文件失败: ' + err.message);
+            console.error(err);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function parseMetricFile(sheet, type) {
+    // Read as array of arrays
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (raw.length < 2) { alert('文件数据不足'); return; }
+
+    // Find header row (first row with "激活日期" or "日期")
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(5, raw.length); i++) {
+        const row = raw[i];
+        if (row.some(cell => String(cell).includes('激活日期') || String(cell).includes('日期'))) {
+            headerRowIdx = i;
+            break;
+        }
+    }
+
+    const headers = raw[headerRowIdx].map(h => String(h).trim());
+
+    // Find date column and users column
+    let dateCol = -1, usersCol = -1;
+    headers.forEach((h, i) => {
+        if (h.includes('激活日期') || (h.includes('日期') && dateCol === -1)) dateCol = i;
+        if (h.includes('激活用户数') || h.includes('用户数')) usersCol = i;
+    });
+
+    if (dateCol === -1) {
+        // Fallback: assume col 0 or 1
+        for (let i = 0; i < Math.min(3, headers.length); i++) {
+            const val = raw[headerRowIdx + 1] ? raw[headerRowIdx + 1][i] : null;
+            if (val instanceof Date || isDateString(String(val))) { dateCol = i; break; }
+        }
+    }
+    if (dateCol === -1) dateCol = 0;
+    if (usersCol === -1) usersCol = dateCol + 1;
+
+    // Column range: retention=C-L (index 2-11), others=D-O (index 3-14)
+    const metricStartCol = (type === 'retention') ? 2 : 3;  // C=2, D=3
+    const metricEndCol   = (type === 'retention') ? 11 : 14; // L=11, O=14
+    const metricHeaders = [];
+    for (let c = metricStartCol; c <= metricEndCol && c < headers.length; c++) {
+        if (headers[c]) metricHeaders.push(headers[c]);
+    }
+
+    // Parse data rows
+    const data = {};
+    for (let r = headerRowIdx + 1; r < raw.length; r++) {
+        const row = raw[r];
+        if (!row || !row[dateCol]) continue;
+
+        const dateKey = normalizeDateKey(row[dateCol]);
+        if (!dateKey) continue;
+
+        const users = parseNumber(row[usersCol]);
+        const values = [];
+        for (let c = metricStartCol; c <= metricEndCol && c < row.length; c++) {
+            values.push(row[c]);
+        }
+
+        data[dateKey] = { users, values };
+    }
+
+    state[type] = { headers: metricHeaders, data };
+    state[type + 'Headers'] = metricHeaders;
+}
+
+function parseSettlement(sheet) {
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (raw.length < 2) { alert('文件数据不足'); return; }
+
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(5, raw.length); i++) {
+        const row = raw[i];
+        if (row.some(cell => String(cell).includes('激活日期') || String(cell).includes('日期'))) {
+            headerRowIdx = i;
+            break;
+        }
+    }
+
+    const headers = raw[headerRowIdx].map(h => String(h).trim());
+
+    let dateCol = -1, usersCol = -1, cpaCol = -1;
+    headers.forEach((h, i) => {
+        if (h.includes('激活日期') || (h.includes('日期') && dateCol === -1)) dateCol = i;
+        if (h.includes('激活用户数') || h.includes('用户数')) usersCol = i;
+        if (h.includes('分销CPA') || h.includes('CPA') || h.includes('cpa')) cpaCol = i;
+    });
+
+    if (dateCol === -1) dateCol = 0;
+    if (usersCol === -1) {
+        // Try to find by position
+        for (let i = 0; i < headers.length; i++) {
+            if (headers[i].includes('用户') || headers[i].includes('激活')) { usersCol = i; break; }
+        }
+        if (usersCol === -1) usersCol = 1;
+    }
+
+    const data = {};
+    for (let r = headerRowIdx + 1; r < raw.length; r++) {
+        const row = raw[r];
+        if (!row || !row[dateCol]) continue;
+
+        const dateKey = normalizeDateKey(row[dateCol]);
+        if (!dateKey) continue;
+
+        const conversions = parseNumber(row[usersCol]);
+        const cpa = cpaCol >= 0 ? parseNumber(row[cpaCol]) : 0;
+
+        data[dateKey] = { conversions, cpa };
+    }
+
+    state.settlement = { data };
+}
+
+// ========== Utilities ==========
+function normalizeDateKey(val) {
+    if (!val && val !== 0) return null;
+    if (val instanceof Date) {
+        if (isNaN(val.getTime())) return null;
+        const y = val.getFullYear();
+        const m = val.getMonth() + 1;
+        const d = val.getDate();
+        return `${y}/${m}/${d}`;
+    }
+    const str = String(val).trim();
+    // Try parse common formats
+    const match = str.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+    if (match) {
+        return `${parseInt(match[1])}/${parseInt(match[2])}/${parseInt(match[3])}`;
+    }
+    // Excel serial number
+    if (/^\d{5}$/.test(str)) {
+        const date = new Date((parseInt(str) - 25569) * 86400000);
+        if (!isNaN(date.getTime())) {
+            return `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()}`;
+        }
+    }
+    return null;
+}
+
+function formatDateDisplay(dateKey) {
+    return dateKey; // Already in YYYY/M/D format
+}
+
+function parseNumber(val) {
+    if (val === null || val === undefined || val === '' || val === '-') return null;
+    if (typeof val === 'number') return val;
+    const str = String(val).replace(/,/g, '').replace(/%/g, '').trim();
+    const num = parseFloat(str);
+    return isNaN(num) ? null : num;
+}
+
+function isDateString(str) {
+    return /\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}/.test(str);
+}
+
+function formatValue(val, isPercent) {
+    if (val === null || val === undefined || val === '' || val === '-') return '-';
+    if (typeof val === 'number') {
+        if (isPercent || (Math.abs(val) <= 1 && val !== 0)) {
+            return (val * 100).toFixed(2) + '%';
+        }
+        return Number.isInteger(val) ? val.toLocaleString() : val.toFixed(2);
+    }
+    return String(val);
+}
+
+function formatMetricValue(val) {
+    if (val === null || val === undefined || val === '' || val === '-') return '-';
+    if (typeof val === 'number') {
+        // Check if it looks like a percentage (between 0 and 1 exclusive, or header hints)
+        if (Math.abs(val) > 0 && Math.abs(val) < 1) {
+            return (val * 100).toFixed(2) + '%';
+        }
+        return Number.isInteger(val) ? val.toLocaleString() : val.toFixed(2);
+    }
+    return String(val);
+}
+
+function formatPercent(val) {
+    if (val === null || val === undefined || isNaN(val)) return '-';
+    return (val * 100).toFixed(2) + '%';
+}
+
+function formatCurrency(val) {
+    if (val === null || val === undefined || isNaN(val)) return '-';
+    return val.toFixed(2);
+}
+
+// Escape HTML attribute value
+function esc(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ========== Formula Tooltip ==========
+(function() {
+    const tooltip = document.getElementById('formula-tooltip');
+    let activeCell = null;
+
+    document.addEventListener('click', function(e) {
+        const cell = e.target.closest('.has-formula');
+
+        // Click outside -> hide
+        if (!cell) {
+            hideTooltip();
+            return;
+        }
+
+        // Click same cell -> toggle off
+        if (cell === activeCell) {
+            hideTooltip();
+            return;
+        }
+
+        // Show tooltip for this cell
+        activeCell = cell;
+        const title = cell.dataset.ftTitle || '';
+        const formula = cell.dataset.ftFormula || '';
+        const calc = cell.dataset.ftCalc || '';
+        const result = cell.dataset.ftResult || '';
+
+        let html = `<div class="ft-title">${title}</div>`;
+        html += `<div class="ft-formula">${formula}</div>`;
+        if (calc) {
+            html += `<div class="ft-calc">= ${calc}</div>`;
+        }
+        html += `<div class="ft-result">= ${result}</div>`;
+        tooltip.innerHTML = html;
+
+        // Position
+        const rect = cell.getBoundingClientRect();
+        let top = rect.bottom + 6;
+        let left = rect.left + rect.width / 2;
+
+        tooltip.classList.add('visible');
+        // Adjust if overflowing right
+        const tw = tooltip.offsetWidth;
+        if (left + tw / 2 > window.innerWidth - 12) {
+            left = window.innerWidth - tw - 12;
+        } else {
+            left = left - tw / 2;
+        }
+        if (left < 8) left = 8;
+        // Adjust if overflowing bottom
+        if (top + tooltip.offsetHeight > window.innerHeight - 12) {
+            top = rect.top - tooltip.offsetHeight - 6;
+        }
+        tooltip.style.top = top + 'px';
+        tooltip.style.left = left + 'px';
+    });
+
+    function hideTooltip() {
+        tooltip.classList.remove('visible');
+        activeCell = null;
+    }
+
+    // Hide on scroll
+    document.querySelector('.table-scroll')?.addEventListener('scroll', hideTooltip);
+    window.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') hideTooltip();
+    });
+})();
+
+// ========== Dashboard Generation ==========
+function generateDashboard() {
+    // Collect all unique dates
+    const allDates = new Set();
+    ['retention', 'lt', 'arpu'].forEach(type => {
+        if (state[type] && state[type].data) {
+            Object.keys(state[type].data).forEach(d => allDates.add(d));
+        }
+    });
+    if (state.settlement && state.settlement.data) {
+        Object.keys(state.settlement.data).forEach(d => allDates.add(d));
+    }
+
+    if (allDates.size === 0) {
+        alert('未找到有效数据，请检查上传的文件');
+        return;
+    }
+
+    // Sort dates descending
+    const sortedDates = Array.from(allDates).sort((a, b) => {
+        const da = new Date(a.replace(/\//g, '-'));
+        const db = new Date(b.replace(/\//g, '-'));
+        return db - da;
+    });
+
+    // Get headers for each section
+    const retHeaders = state.retentionHeaders.length > 0 ? state.retentionHeaders :
+        ['1日留存率','2日留存率','3日留存率','4日留存率','5日留存率','7日留存率','14日留存率','30日留存率','45日留存率'];
+    const ltHeaders = state.ltHeaders.length > 0 ? state.ltHeaders :
+        ['真实ltv_1','真实ltv_2','真实ltv_3','真实ltv_4','真实ltv_5','真实ltv_7','真实ltv_14','真实ltv_30','真实ltv_45'];
+    const arpuHeaders = state.arpuHeaders.length > 0 ? state.arpuHeaders :
+        ['真实Arpu_1','真实Arpu_2','真实Arpu_3','真实Arpu_4','真实Arpu_5','真实Arpu_7','真实Arpu_14','真实Arpu_30','真实Arpu_45'];
+    const settlementHeaders = ['结算单价','结算金额','媒体消耗','利润','利润率'];
+
+    const retCount = retHeaders.length;
+    const ltCount = ltHeaders.length;
+    const arpuCount = arpuHeaders.length;
+    const settCount = settlementHeaders.length;
+
+    // Build table HTML
+    let html = '<table id="data-table">';
+
+    // ===== HEADER ROW 1: Group headers =====
+    html += '<thead>';
+    html += '<tr>';
+    html += '<th rowspan="2" class="th-base" style="min-width:100px;">激活日期</th>';
+    html += '<th rowspan="2" class="th-base" style="min-width:80px;">激活用户数</th>';
+    if (retCount > 0) html += `<th colspan="${retCount}" class="th-retention">留存</th>`;
+    if (ltCount > 0) html += `<th colspan="${ltCount}" class="th-lt">LT</th>`;
+    if (arpuCount > 0) html += `<th colspan="${arpuCount}" class="th-arpu">ARPU</th>`;
+    html += `<th colspan="${settCount}" class="th-settlement">结算</th>`;
+    html += '</tr>';
+
+    // ===== HEADER ROW 2: Sub-headers =====
+    html += '<tr>';
+    retHeaders.forEach(h => { html += `<th class="th-retention-sub">${h}</th>`; });
+    ltHeaders.forEach(h => { html += `<th class="th-lt-sub">${h}</th>`; });
+    arpuHeaders.forEach(h => { html += `<th class="th-arpu-sub">${h}</th>`; });
+    settlementHeaders.forEach(h => {
+        html += `<th class="th-settlement-sub">${h}</th>`;
+    });
+    html += '</tr>';
+    html += '</thead>';
+
+    // ===== DATA ROWS =====
+    html += '<tbody>';
+
+    let totalUsers = 0, totalSettlementAmount = 0, totalMediaExpense = 0, totalProfit = 0;
+    let rowCount = 0;
+
+    sortedDates.forEach(dateKey => {
+        html += '<tr>';
+
+        // Date
+        html += `<td class="date-cell">${formatDateDisplay(dateKey)}</td>`;
+
+        // Activation users (from any source)
+        let activationUsers = null;
+        ['retention', 'lt', 'arpu'].forEach(type => {
+            if (activationUsers === null && state[type] && state[type].data[dateKey]) {
+                activationUsers = state[type].data[dateKey].users;
+            }
+        });
+        html += `<td class="users-cell">${activationUsers !== null ? activationUsers.toLocaleString() : '-'}</td>`;
+        if (activationUsers) totalUsers += activationUsers;
+
+        // Retention values
+        for (let i = 0; i < retCount; i++) {
+            const val = state.retention && state.retention.data[dateKey] ? state.retention.data[dateKey].values[i] : null;
+            const display = formatMetricValue(val);
+            html += `<td class="retention-cell">${display}</td>`;
+        }
+
+        // LT values
+        for (let i = 0; i < ltCount; i++) {
+            const val = state.lt && state.lt.data[dateKey] ? state.lt.data[dateKey].values[i] : null;
+            const display = formatMetricValue(val);
+            html += `<td class="lt-cell">${display}</td>`;
+        }
+
+        // ARPU values
+        for (let i = 0; i < arpuCount; i++) {
+            const val = state.arpu && state.arpu.data[dateKey] ? state.arpu.data[dateKey].values[i] : null;
+            const display = formatMetricValue(val);
+            html += `<td class="arpu-cell">${display}</td>`;
+        }
+
+        // Settlement calculations
+        const settData = state.settlement && state.settlement.data[dateKey] ? state.settlement.data[dateKey] : null;
+        const cpa = settData ? settData.cpa : null;
+
+        // 结算单价 (source field, no formula)
+        html += `<td class="settlement-cell">${cpa !== null ? formatCurrency(cpa) : '-'}</td>`;
+
+        // 结算金额 = 结算单价 * 激活用户数
+        let settlementAmount = null;
+        if (activationUsers !== null && cpa !== null) {
+            settlementAmount = cpa * activationUsers;
+        }
+        const amtFormulaDetail = (cpa !== null && activationUsers !== null)
+            ? `${formatCurrency(cpa)} * ${activationUsers}` : '';
+        html += `<td class="settlement-cell has-formula" `
+            + `data-ft-title="结算金额" `
+            + `data-ft-formula="结算单价 * 激活用户数" `
+            + `data-ft-calc="${esc(amtFormulaDetail)}" `
+            + `data-ft-result="${settlementAmount !== null ? formatCurrency(settlementAmount) : '-'}">`
+            + `${settlementAmount !== null ? formatCurrency(settlementAmount) : '-'}</td>`;
+
+        // 媒体消耗 (editable, no formula)
+        const savedExpense = state.mediaExpense[dateKey] !== undefined ? state.mediaExpense[dateKey] : '';
+        html += `<td class="settlement-cell"><input type="number" class="media-input" `
+            + `value="${savedExpense}" data-date="${dateKey}" `
+            + `onchange="onMediaExpenseChange(this)" onblur="onMediaExpenseChange(this)" `
+            + `placeholder="输入"></td>`;
+
+        // 利润 = 结算金额 - 媒体消耗
+        const mediaExp = savedExpense !== '' ? parseFloat(savedExpense) : null;
+        let profit = null;
+        if (settlementAmount !== null && mediaExp !== null) {
+            profit = settlementAmount - mediaExp;
+        }
+        const profitClass = profit !== null ? (profit >= 0 ? 'profit-positive' : 'profit-negative') : 'settlement-cell';
+        const profitFormulaDetail = (settlementAmount !== null && mediaExp !== null)
+            ? `${formatCurrency(settlementAmount)} - ${formatCurrency(mediaExp)}` : '';
+        html += `<td class="${profitClass} has-formula" id="profit-${CSS.escape(dateKey)}" `
+            + `data-ft-title="利润" `
+            + `data-ft-formula="结算金额 - 媒体消耗" `
+            + `data-ft-calc="${esc(profitFormulaDetail)}" `
+            + `data-ft-result="${profit !== null ? formatCurrency(profit) : '-'}">`
+            + `${profit !== null ? formatCurrency(profit) : '-'}</td>`;
+
+        // 利润率 = 利润 / 媒体消耗
+        let profitRate = null;
+        if (profit !== null && mediaExp !== null && mediaExp > 0) {
+            profitRate = profit / mediaExp;
+        }
+        const prClass = profitRate !== null ? (profitRate >= 0 ? 'profit-positive' : 'profit-negative') : 'settlement-cell';
+        const prFormulaDetail = (profit !== null && mediaExp !== null)
+            ? `${formatCurrency(profit)} / ${formatCurrency(mediaExp)}` : '';
+        html += `<td class="${prClass} has-formula" id="profitrate-${CSS.escape(dateKey)}" `
+            + `data-ft-title="利润率" `
+            + `data-ft-formula="利润 / 媒体消耗" `
+            + `data-ft-calc="${esc(prFormulaDetail)}" `
+            + `data-ft-result="${profitRate !== null ? formatPercent(profitRate) : '-'}">`
+            + `${profitRate !== null ? formatPercent(profitRate) : '-'}</td>`;
+
+        html += '</tr>';
+
+        // Accumulate totals
+        if (settlementAmount) totalSettlementAmount += settlementAmount;
+        if (mediaExp) totalMediaExpense += mediaExp;
+        if (profit) totalProfit += profit;
+        rowCount++;
+    });
+
+    // Summary row
+    html += '<tr class="summary-row">';
+    html += '<td class="date-cell" style="font-weight:700;">汇总</td>';
+    html += `<td class="users-cell">${totalUsers.toLocaleString()}</td>`;
+    // Empty cells for retention/lt/arpu
+    for (let i = 0; i < retCount + ltCount + arpuCount; i++) {
+        html += '<td>-</td>';
+    }
+    html += '<td>-</td>'; // CPA average
+    html += `<td class="settlement-cell">${formatCurrency(totalSettlementAmount)}</td>`;
+    html += `<td class="settlement-cell">${formatCurrency(totalMediaExpense)}</td>`;
+    const totalProfitClass = totalProfit >= 0 ? 'profit-positive' : 'profit-negative';
+    html += `<td class="${totalProfitClass}">${formatCurrency(totalProfit)}</td>`;
+    const totalProfitRate = totalMediaExpense > 0 ? totalProfit / totalMediaExpense : null;
+    html += `<td class="${totalProfitClass}">${totalProfitRate !== null ? formatPercent(totalProfitRate) : '-'}</td>`;
+    html += '</tr>';
+
+    html += '</tbody></table>';
+
+    document.getElementById('table-scroll').innerHTML = html;
+    document.getElementById('empty-state')?.remove();
+    document.getElementById('btn-export').disabled = false;
+    document.getElementById('stats-info').textContent =
+        `共 ${rowCount} 天数据 | 总激活: ${totalUsers.toLocaleString()} | 总结算: ${formatCurrency(totalSettlementAmount)} | 总利润: ${formatCurrency(totalProfit)}`;
+}
+
+// ========== Media Expense Handler ==========
+function onMediaExpenseChange(input) {
+    const dateKey = input.dataset.date;
+    const val = input.value.trim();
+    if (val === '') {
+        delete state.mediaExpense[dateKey];
+    } else {
+        state.mediaExpense[dateKey] = parseFloat(val);
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.mediaExpense));
+
+    // Recalculate profit and profit rate for this row
+    recalcRow(dateKey);
+}
+
+function recalcRow(dateKey) {
+    const settData = state.settlement && state.settlement.data[dateKey] ? state.settlement.data[dateKey] : null;
+    const cpa = settData ? settData.cpa : null;
+
+    // Get activation users
+    let activationUsers = null;
+    ['retention', 'lt', 'arpu'].forEach(type => {
+        if (activationUsers === null && state[type] && state[type].data[dateKey]) {
+            activationUsers = state[type].data[dateKey].users;
+        }
+    });
+
+    let settlementAmount = null;
+    if (activationUsers !== null && cpa !== null) {
+        settlementAmount = cpa * activationUsers;
+    }
+
+    const mediaExp = state.mediaExpense[dateKey] !== undefined ? state.mediaExpense[dateKey] : null;
+
+    let profit = null;
+    if (settlementAmount !== null && mediaExp !== null) {
+        profit = settlementAmount - mediaExp;
+    }
+
+    let profitRate = null;
+    if (profit !== null && mediaExp !== null && mediaExp > 0) {
+        profitRate = profit / mediaExp;
+    }
+
+    // Update DOM
+    const escapedKey = CSS.escape(dateKey);
+    const profitCell = document.getElementById('profit-' + escapedKey);
+    const profitRateCell = document.getElementById('profitrate-' + escapedKey);
+
+    if (profitCell) {
+        profitCell.textContent = profit !== null ? formatCurrency(profit) : '-';
+        profitCell.className = (profit !== null ? (profit >= 0 ? 'profit-positive' : 'profit-negative') : 'settlement-cell') + ' has-formula';
+        // Update formula data
+        profitCell.dataset.ftCalc = (settlementAmount !== null && mediaExp !== null)
+            ? `${formatCurrency(settlementAmount)} - ${formatCurrency(mediaExp)}` : '';
+        profitCell.dataset.ftResult = profit !== null ? formatCurrency(profit) : '-';
+    }
+    if (profitRateCell) {
+        profitRateCell.textContent = profitRate !== null ? formatPercent(profitRate) : '-';
+        profitRateCell.className = (profitRate !== null ? (profitRate >= 0 ? 'profit-positive' : 'profit-negative') : 'settlement-cell') + ' has-formula';
+        // Update formula data
+        profitRateCell.dataset.ftCalc = (profit !== null && mediaExp !== null)
+            ? `${formatCurrency(profit)} / ${formatCurrency(mediaExp)}` : '';
+        profitRateCell.dataset.ftResult = profitRate !== null ? formatPercent(profitRate) : '-';
+    }
+}
+
+// ========== Export ==========
+function exportToExcel() {
+    const table = document.getElementById('data-table');
+    if (!table) { alert('请先生成看板'); return; }
+
+    // Clone table and replace inputs with values
+    const clone = table.cloneNode(true);
+    clone.querySelectorAll('input').forEach(input => {
+        const td = input.parentElement;
+        td.textContent = input.value || '-';
+    });
+
+    const wb = XLSX.utils.table_to_book(clone, { sheet: '结算看板' });
+    XLSX.writeFile(wb, '红果APP分销结算看板_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+
+// ========== Clear ==========
+function clearAll() {
+    if (!confirm('确定要清空所有已上传的数据吗？（媒体消耗输入数据将保留）')) return;
+
+    state.retention = null;
+    state.lt = null;
+    state.arpu = null;
+    state.settlement = null;
+    state.retentionHeaders = [];
+    state.ltHeaders = [];
+    state.arpuHeaders = [];
+
+    ['retention', 'lt', 'arpu', 'settlement'].forEach(type => {
+        document.getElementById('card-' + type).classList.remove('uploaded');
+        const status = document.getElementById('status-' + type);
+        status.className = 'status waiting';
+        status.textContent = '待上传';
+        document.getElementById('fileinfo-' + type).textContent = '';
+        document.getElementById('card-' + type).querySelector('input[type="file"]').value = '';
+    });
+
+    document.getElementById('table-scroll').innerHTML =
+        '<div class="empty-state" id="empty-state"><div class="icon">&#128451;</div><p>请先在「数据源管理」中上传文件并生成看板</p></div>';
+    document.getElementById('btn-generate').disabled = true;
+    document.getElementById('btn-export').disabled = true;
+    document.getElementById('stats-info').textContent = '';
+    updateBadge();
+    localStorage.removeItem(DATA_STORAGE_KEY);
+}
+
+// ========== Page Load Restore ==========
+(function restoreOnLoad() {
+    const hasData = state.retention || state.lt || state.arpu || state.settlement;
+    if (!hasData) return;
+
+    // Restore upload card UI
+    ['retention', 'lt', 'arpu', 'settlement'].forEach(type => {
+        if (state[type]) {
+            document.getElementById('card-' + type).classList.add('uploaded');
+            const status = document.getElementById('status-' + type);
+            status.className = 'status success';
+            status.textContent = '已上传 (缓存)';
+        }
+    });
+    document.getElementById('btn-generate').disabled = false;
+    updateBadge();
+
+    // Auto-generate dashboard
+    generateDashboard();
+})();
+</script>
+</body>
+</html>
