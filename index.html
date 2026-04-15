@@ -1112,8 +1112,9 @@ function clearAll() {
     document.getElementById('btn-generate').disabled = false;
     updateBadge();
 
-    // Auto-generate dashboard
+    // Auto-generate dashboard and jump to dashboard page
     generateDashboard();
+    switchPage('dashboard');
 })();
 </script>
 </body>
