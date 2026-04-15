@@ -950,9 +950,9 @@ function generateDashboard() {
         html += '</tr>';
 
         // Accumulate totals
-        if (settlementAmount) totalSettlementAmount += settlementAmount;
-        if (mediaExp) totalMediaExpense += mediaExp;
-        if (profit) totalProfit += profit;
+        if (settlementAmount !== null) totalSettlementAmount += settlementAmount;
+        if (mediaExp !== null) totalMediaExpense += mediaExp;
+        if (profit !== null) totalProfit += profit;
         rowCount++;
     });
 
@@ -965,12 +965,12 @@ function generateDashboard() {
         html += '<td>-</td>';
     }
     html += '<td>-</td>'; // CPA average
-    html += `<td class="settlement-cell">${formatCurrency(totalSettlementAmount)}</td>`;
-    html += `<td class="settlement-cell">${formatCurrency(totalMediaExpense)}</td>`;
+    html += `<td class="settlement-cell" id="summary-settlement">${formatCurrency(totalSettlementAmount)}</td>`;
+    html += `<td class="settlement-cell" id="summary-media">${formatCurrency(totalMediaExpense)}</td>`;
     const totalProfitClass = totalProfit >= 0 ? 'profit-positive' : 'profit-negative';
-    html += `<td class="${totalProfitClass}">${formatCurrency(totalProfit)}</td>`;
+    html += `<td class="${totalProfitClass}" id="summary-profit">${formatCurrency(totalProfit)}</td>`;
     const totalProfitRate = totalMediaExpense > 0 ? totalProfit / totalMediaExpense : null;
-    html += `<td class="${totalProfitClass}">${totalProfitRate !== null ? formatPercent(totalProfitRate) : '-'}</td>`;
+    html += `<td class="${totalProfitClass}" id="summary-profitrate">${totalProfitRate !== null ? formatPercent(totalProfitRate) : '-'}</td>`;
     html += '</tr>';
 
     html += '</tbody></table>';
@@ -995,6 +995,8 @@ function onMediaExpenseChange(input) {
 
     // Recalculate profit and profit rate for this row
     recalcRow(dateKey);
+    // Recalculate summary row totals
+    recalcSummary();
 }
 
 function recalcRow(dateKey) {
@@ -1049,7 +1051,84 @@ function recalcRow(dateKey) {
     }
 }
 
-// ========== Export ==========
+function recalcSummary() {
+    // Recalculate all summary totals from current state
+    const allDates = new Set();
+    ['retention', 'lt', 'arpu'].forEach(type => {
+        if (state[type] && state[type].data) {
+            Object.keys(state[type].data).forEach(d => allDates.add(d));
+        }
+    });
+    if (state.settlement && state.settlement.data) {
+        Object.keys(state.settlement.data).forEach(d => allDates.add(d));
+    }
+
+    let totalSettlementAmount = 0;
+    let totalMediaExpense = 0;
+    let totalProfit = 0;
+
+    allDates.forEach(dateKey => {
+        let activationUsers = null;
+        ['retention', 'lt', 'arpu'].forEach(type => {
+            if (activationUsers === null && state[type] && state[type].data[dateKey]) {
+                activationUsers = state[type].data[dateKey].users;
+            }
+        });
+
+        const settData = state.settlement && state.settlement.data[dateKey] ? state.settlement.data[dateKey] : null;
+        const cpa = settData ? settData.cpa : null;
+
+        let settlementAmount = null;
+        if (activationUsers !== null && cpa !== null) {
+            settlementAmount = cpa * activationUsers;
+        }
+
+        const mediaExp = state.mediaExpense[dateKey] !== undefined ? state.mediaExpense[dateKey] : null;
+
+        let profit = null;
+        if (settlementAmount !== null && mediaExp !== null) {
+            profit = settlementAmount - mediaExp;
+        }
+
+        if (settlementAmount !== null) totalSettlementAmount += settlementAmount;
+        if (mediaExp !== null) totalMediaExpense += mediaExp;
+        if (profit !== null) totalProfit += profit;
+    });
+
+    // Update summary row cells
+    const summarySettlement = document.getElementById('summary-settlement');
+    const summaryMedia = document.getElementById('summary-media');
+    const summaryProfit = document.getElementById('summary-profit');
+    const summaryProfitRate = document.getElementById('summary-profitrate');
+
+    if (summarySettlement) summarySettlement.textContent = formatCurrency(totalSettlementAmount);
+    if (summaryMedia) summaryMedia.textContent = formatCurrency(totalMediaExpense);
+    if (summaryProfit) {
+        summaryProfit.textContent = formatCurrency(totalProfit);
+        summaryProfit.className = totalProfit >= 0 ? 'profit-positive' : 'profit-negative';
+    }
+    if (summaryProfitRate) {
+        const totalProfitRate = totalMediaExpense > 0 ? totalProfit / totalMediaExpense : null;
+        summaryProfitRate.textContent = totalProfitRate !== null ? formatPercent(totalProfitRate) : '-';
+        summaryProfitRate.className = totalProfit >= 0 ? 'profit-positive' : 'profit-negative';
+    }
+
+    // Update stats bar
+    let totalUsers = 0;
+    allDates.forEach(dateKey => {
+        let activationUsers = null;
+        ['retention', 'lt', 'arpu'].forEach(type => {
+            if (activationUsers === null && state[type] && state[type].data[dateKey]) {
+                activationUsers = state[type].data[dateKey].users;
+            }
+        });
+        if (activationUsers) totalUsers += activationUsers;
+    });
+    const statsInfo = document.getElementById('stats-info');
+    if (statsInfo) {
+        statsInfo.textContent = `共 ${allDates.size} 天数据 | 总激活: ${totalUsers.toLocaleString()} | 总结算: ${formatCurrency(totalSettlementAmount)} | 总利润: ${formatCurrency(totalProfit)}`;
+    }
+}
 function exportToExcel() {
     const table = document.getElementById('data-table');
     if (!table) { alert('请先生成看板'); return; }
