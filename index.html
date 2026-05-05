@@ -920,15 +920,17 @@ function generateDashboard() {
             + `onchange="onMediaExpenseChange(this)" onblur="onMediaExpenseChange(this)" `
             + `placeholder="输入"></td>`;
 
-        // 利润 = 结算金额 - 媒体消耗
+        // 利润 = 结算金额 - 媒体消耗（有媒体消耗时，结算金额为空视为0）
         const mediaExp = savedExpense !== '' ? parseFloat(savedExpense) : null;
         let profit = null;
-        if (settlementAmount !== null && mediaExp !== null) {
-            profit = settlementAmount - mediaExp;
+        if (mediaExp !== null) {
+            profit = (settlementAmount || 0) - mediaExp;
+        } else if (settlementAmount !== null) {
+            profit = settlementAmount;
         }
         const profitClass = profit !== null ? (profit >= 0 ? 'profit-positive' : 'profit-negative') : 'settlement-cell';
-        const profitFormulaDetail = (settlementAmount !== null && mediaExp !== null)
-            ? `${formatCurrency(settlementAmount)} - ${formatCurrency(mediaExp)}` : '';
+        const profitFormulaDetail = (profit !== null && mediaExp !== null)
+            ? `${formatCurrency(settlementAmount || 0)} - ${formatCurrency(mediaExp)}` : '';
         html += `<td class="${profitClass} has-formula" id="profit-${CSS.escape(dateKey)}" `
             + `data-ft-title="利润" `
             + `data-ft-formula="结算金额 - 媒体消耗" `
@@ -1024,8 +1026,10 @@ function recalcRow(dateKey) {
     const mediaExp = state.mediaExpense[dateKey] !== undefined ? state.mediaExpense[dateKey] : null;
 
     let profit = null;
-    if (settlementAmount !== null && mediaExp !== null) {
-        profit = settlementAmount - mediaExp;
+    if (mediaExp !== null) {
+        profit = (settlementAmount || 0) - mediaExp;
+    } else if (settlementAmount !== null) {
+        profit = settlementAmount;
     }
 
     let profitRate = null;
@@ -1091,8 +1095,10 @@ function recalcSummary() {
         const mediaExp = state.mediaExpense[dateKey] !== undefined ? state.mediaExpense[dateKey] : null;
 
         let profit = null;
-        if (settlementAmount !== null && mediaExp !== null) {
-            profit = settlementAmount - mediaExp;
+        if (mediaExp !== null) {
+            profit = (settlementAmount || 0) - mediaExp;
+        } else if (settlementAmount !== null) {
+            profit = settlementAmount;
         }
 
         if (settlementAmount !== null) totalSettlementAmount += settlementAmount;
