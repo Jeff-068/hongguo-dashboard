@@ -362,7 +362,7 @@
                 <div class="upload-card retention" id="card-retention">
                     <div class="icon">&#128202;</div>
                     <div class="label">留存数据</div>
-                    <div class="hint">Excel 取 C~L 列</div>
+                    <div class="hint">Excel 取 C~M 列</div>
                     <div class="status waiting" id="status-retention">待上传</div>
                     <div class="file-info" id="fileinfo-retention"></div>
                     <input type="file" accept=".xlsx,.xls,.csv" onchange="handleFileUpload('retention', this)">
@@ -559,7 +559,7 @@ function parseMetricFile(sheet, type) {
 
     // Column range: retention=C-L (index 2-11), others=D-O (index 3-14)
     const metricStartCol = (type === 'retention') ? 2 : 3;  // C=2, D=3
-    const metricEndCol   = (type === 'retention') ? 11 : 14; // L=11, O=14
+    const metricEndCol   = (type === 'retention') ? 12 : 14; // M=12, O=14
     const metricHeaders = [];
     for (let c = metricStartCol; c <= metricEndCol && c < headers.length; c++) {
         if (headers[c]) metricHeaders.push(headers[c]);
